@@ -10,6 +10,8 @@ from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_core.prompts import PromptTemplate
+from fastapi.responses import HTMLResponse
+
 
 load_dotenv()
 
