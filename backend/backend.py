@@ -35,12 +35,15 @@ async def upload(file: UploadFile = File(...)):
     content = await file.read()
     text = content.decode("utf-8")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=20)
-    chunks = splitter.split_text(text)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+    chunks = splitter.split_text(text) or [text]
 
     embeddings = OpenAIEmbeddings()
-    db = Chroma.from_texts(chunks, embeddings)  # type: ignore
-    retriever = db.as_retriever()
+    db = Chroma.from_texts( #type:ignore
+        chunks, 
+        embeddings, 
+        collection_name=str(uuid.uuid4()))  #unikt DB varje gång. collection_name=uuid4()
+    retriever = db.as_retriever(search_kwargs={"k": 2})
 
     llm = ChatOpenAI(model="gpt-4o-mini")
     prompt_template = (
@@ -54,10 +57,10 @@ async def upload(file: UploadFile = File(...)):
 
     prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
 
-    qa_chain = RetrievalQA.from_chain_type(
+    qa_chain = RetrievalQA.from_chain_type( #type:ignore
         llm=llm,
         chain_type="stuff",
-        retriever=retriever,
+        retriever=retriever, # each retriever refers to a db with a unique collection name, one for each user
         chain_type_kwargs={"prompt": prompt}
     )
 
