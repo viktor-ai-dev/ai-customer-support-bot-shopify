@@ -84,3 +84,10 @@ async def chat(req: ChatRequest):                           #type: ignore
     sources = [doc.page_content for doc in docs]            #type: ignore
 
     return {"answer": result, "sources": sources}           #type: ignore
+
+# --------------------
+# Root endpoint
+# --------------------
+@app.get("/")
+async def root():
+    return {"message": "AI Customer Support Bot is live!"}
