@@ -73,8 +73,6 @@ async def upload(file: UploadFile = File(...)):
             persist_directory=f"./chroma_db/{user_id}"
         )
 
-        db.persist() # type: ignore
-
         # 🔥 Save in Supabase
         supabase.table("users_docs").insert({
             "user_id": user_id,
