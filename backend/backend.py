@@ -13,15 +13,45 @@ from supabase import create_client, Client
 load_dotenv()
 
 # --------------------
-# Supabase (global klient, används bara för inloggning)
+# Konstanter (ingen global klient)
 # --------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # Måste vara anon key i produktion
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")          # anon key
+SUPABASE_EMAIL = os.getenv("SUPABASE_USERNAME")
+SUPABASE_PASS = os.getenv("SUPABASE_PASSWORD")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Missing Supabase credentials")
+if not SUPABASE_EMAIL or not SUPABASE_PASS:
+    raise ValueError("Missing Supabase email/password")
 
-#supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# --------------------
+# Hjälpfunktion: skapar en autentiserad Supabase-klient lokalt
+# --------------------
+def get_authed_supabase() -> tuple[Client, str]:
+
+    # Temporär oautentiserad klient för inloggning
+    # Returnerar JWT-token.
+    temp_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    auth_response = temp_client.auth.sign_in_with_password({
+        "email": SUPABASE_EMAIL,
+        "password": SUPABASE_PASS
+    })
+
+    if not auth_response.session:
+        raise ValueError("Login failed - no session returned")
+    
+    # Skapa en ny autentiserad klient med samma nyckel
+    authed_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # Använder authed_response från temp_client med giltig JWT-token.
+    authed_client.auth.set_session(
+        auth_response.session.access_token,
+        auth_response.session.refresh_token
+    )
+    user_id = str(auth_response.user.id)
+    return authed_client, user_id
 
 # --------------------
 # App
@@ -52,42 +82,15 @@ async def upload(file: UploadFile = File(...)):
         content = await file.read()
         text = content.decode("utf-8")
 
-        # Split text
         splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
         chunks = splitter.split_text(text) or [text]
         embeddings = OpenAIEmbeddings()
 
-        # --------------------
-        # Autentisering med anon key
-        # --------------------
-        supabase_email = os.getenv("SUPABASE_USERNAME")
-        supabase_pass = os.getenv("SUPABASE_PASSWORD")
-
-        if not supabase_email or not supabase_pass:
-            raise ValueError("Supabase email/password missing in .env")
-
-        # Logga in med den globala klienten
-        auth_response = supabase.auth.sign_in_with_password({
-            "email": supabase_email,
-            "password": supabase_pass
-        })
-
-        if not auth_response.session:
-            raise ValueError("Login failed - no session returned")
-
-        # Skapa en NY klient enbart för denna användare, sätt token manuellt
-        authed_supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        authed_supabase.auth.set_session(
-            auth_response.session.access_token,
-            auth_response.session.refresh_token
-        )
-
-        user_id = str(auth_response.user.id)
+        # Skapa lokal autentiserad klient
+        authed_supabase, user_id = get_authed_supabase()
         print("Inloggad användare:", user_id)
 
-        # --------------------
         # Skapa Chroma-databas
-        # --------------------
         Chroma.from_texts(
             texts=chunks,
             embedding=embeddings,
@@ -95,16 +98,13 @@ async def upload(file: UploadFile = File(...)):
             persist_directory=f"./chroma_db/{user_id}"
         )
 
-        # --------------------
-        # Spara i Supabase med den autentiserade klienten
-        # --------------------
+        # Spara i Supabase
         result = authed_supabase.table("users_docs").insert({
             "user_id": user_id,
             "collection_name": user_id
         }).execute()
 
         print("Insert result:", result.data)
-
         return {"user_id": user_id}
 
     except Exception as e:
@@ -117,21 +117,24 @@ async def upload(file: UploadFile = File(...)):
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
-        print("Incoming request: ", req)
+        print("Incoming request:", req)
 
-        # Här räcker det med den globala klienten, eftersom vi bara läser data
-        # (SELECT kräver RLS-policy, men vi har redan en SELECT-policy för användaren)
-        response = supabase.table("users_docs") \
+        # Skapa lokal autentiserad klient
+        authed_supabase, logged_in_user_id = get_authed_supabase()
+        print("Inloggad användare (RLS):", logged_in_user_id)
+
+        # Hämta användarens dokument (RLS filtrerar automatiskt på logged_in_user_id)
+        result = authed_supabase.table("users_docs") \
             .select("*") \
             .eq("user_id", req.user_id) \
             .execute()
         
-        print("Supabase response:", response.data)
+        print("Supabase response:", result.data)
 
-        if not response.data:
+        if not result.data:
             return {"error": "User not found"}
 
-        collection_name = response.data[0]["collection_name"]
+        collection_name = result.data[0]["collection_name"]
 
         embeddings = OpenAIEmbeddings()
         db = Chroma(
