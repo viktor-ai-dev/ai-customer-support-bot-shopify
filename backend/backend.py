@@ -95,12 +95,14 @@ async def upload(file: UploadFile = File(...)):
 async def chat(req: ChatRequest):
     try:
         print("Incoming request: ", req)
-        
+
         # 🔥 Get user from DB
         response = supabase.table("users_docs") \
             .select("*") \
             .eq("user_id", req.user_id) \
             .execute()
+        
+        print("Supabase response:", response.data)
 
         if not response.data:
             return {"error": "User not found"}
