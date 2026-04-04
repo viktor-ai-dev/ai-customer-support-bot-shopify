@@ -8,6 +8,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from fastapi import Form
+import re
 
 load_dotenv()
 
@@ -58,8 +59,12 @@ def get_authed_supabase() -> tuple[Client, str]:
 # Give points accordingly.
 # --------------------
 def score_doc(doc: Document, question: str):
-   return sum(Word in doc.page_content.lower() for Word in question.lower().split())
-
+    words = question.lower().split()
+    content = doc.page_content.lower()
+    
+    # r = raw string, behövs för att använda \b, vilket är en ordgräns.
+    # f = f-string, behövs för att kunna ha argument {w} ersätts med ordet
+    return sum(1 for w in words if re.search(rf'\b{w}\b', content))
 
 # --------------------
 # App
@@ -222,8 +227,8 @@ async def chat(req: ChatRequest):
 
         # Top docs
         # returns sorted list in descending order(reverse=True) limit to 5
-        top_docs = sorted(unique_docs, key=score_doc, reverse=True)[:5]
-
+        top_docs = sorted(unique_docs, key=lambda d: score_doc(doc=d, question=req.question.lower()), reverse=True)[:5]
+        
         # Join bygger och slår ihop ett set av strängar till en enda sträng, vilket vi bygger med listbyggaren
         # Varje element vi itererar över separeras med \n
         context = "\n".join([doc.page_content for doc in top_docs]) 
