@@ -58,11 +58,7 @@ def get_authed_supabase() -> tuple[Client, str]:
 # Give points accordingly.
 # --------------------
 def score_doc(doc: Document, question: str):
-    score = 0
-    for word in question.split():
-        if word in doc.page_content:
-            score += 1
-    return score
+   return sum(Word in doc.page_content.lower() for Word in question.lower().split())
 
 
 # --------------------
@@ -161,18 +157,29 @@ async def chat(req: ChatRequest):
             persist_directory=f"./chroma_db/{collection_name}"
         )
 
+        #  --------------------
         # Retriever has a filter for getting chunks with category, for ex: policy.
-        question = req.question.lower()
+        # AI Driven Routing here.
+        # --------------------
+        router_prompt = f"""
+        You are an AI prouter for an ecommerce support team.
 
-        if any(Word in question for Word in ["compare","vs","difference"]):
-            filter = {"doc_type":"products"}
-        elif any(Word in question for Word in ["return","refund","order","shipping", "delivery", "track", "where"]):
-            filter = {"doc_type":"policy"}
-        elif any(Word in question for Word in ["warranty","contact","support"]):
-            filter = {"doc_type":"faq"}
-        else:
-            filter = None
+        Classify the user's question into ONE of the categories.
+        - products
+        - policy
+        - faq
 
+        ONLY return the category name.
+
+        Question: {req.question}
+        """
+        router_llm = ChatOpenAI(model="gpt-4o-mini")
+        route = router_llm.invoke(router_prompt).content.strip().lower()     #type: ignore
+        print("AI ROUTE:", route)                                            #type: ignore
+
+        filter = None
+        filter = {"doc_type", route} if route in ["products","policy","faq"] else None
+      
         retriever = db.as_retriever(
             search_kwargs={
                 "k": 2,
@@ -181,17 +188,19 @@ async def chat(req: ChatRequest):
         )
 
         # Send question(query) and retrieve relevant chunks
-        vector_docs = retriever.invoke(req.question)    # Semantic docs = docs där de har enligt AI en relevant betydelse(semantisk)
-        keyword_docs = []                               # keyword docs = docs där ett/flera ord finns i question.
+        # Semantic docs = docs där de har enligt AI en relevant betydelse(semantisk)
+        vector_docs = retriever.invoke(req.question)    
 
+        # keyword docs = docs där ett/flera ord finns i question.
         # Loopa igenom chunks(docs), kolla att ett visst ord finns i question.
-        for doc in vector_docs:
-            if any(Word in doc.page_content.lower() for Word in req.question.lower().split()):
-                keyword_docs.append(doc)
+        keyword_docs = [
+          doc for doc in vector_docs if any(Word in doc.page_content.lower() for Word in req.question.lower().split()) 
+        ]                               
 
         # Merge ALL docs, vector + keyword.
         all_docs = vector_docs + keyword_docs
 
+        # dedupe
         unique_docs = []    # unika docs
         seen = set()        # innehållet i docs
 
@@ -200,10 +209,9 @@ async def chat(req: ChatRequest):
                 unique_docs.append(doc)         # Spara doc objektet
                 seen.add(doc.page_content)      # Spara denna text
 
-        # Top docs:
-        # sorted(T@sorted, key) = sorted(list_to_sort, lambda=for each element d in unique_docs: score_doc(d,question)) 
+        # Top docs
         # returns sorted list in descending order(reverse=True) limit to 5
-        top_docs = sorted(unique_docs, key=lambda d: score_doc(d, req.question.lower()),reverse=True)[:5]
+        top_docs = sorted(unique_docs, key=score_doc, reverse=True)[:5]
 
         # Join bygger och slår ihop ett set av strängar till en enda sträng, vilket vi bygger med listbyggaren
         # Varje element vi itererar över separeras med \n
