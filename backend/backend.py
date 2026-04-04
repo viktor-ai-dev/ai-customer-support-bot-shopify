@@ -12,6 +12,9 @@ import re
 
 load_dotenv()
 
+# Används för Conversation Memory
+chat_memory = {}
+
 # --------------------
 # Konstanter (ingen global klient)
 # --------------------
@@ -136,6 +139,17 @@ async def chat(req: ChatRequest):
     try:
         print("Incoming request:", req)
 
+        # clear conversional memory if such user don't exist
+        if req.user_id not in chat_memory:
+            chat_memory[req.user_id] = []
+
+        # history
+        history = chat_memory[req.user_id]
+
+        history_text = "\n".join([
+            f"User: {h['q']}\nAI: {h['a']}" for h in history[-3:]   # de tre senaste elementen
+        ])
+
         # Skapa lokal autentiserad klient
         authed_supabase, logged_in_user_id = get_authed_supabase()
         print("Inloggad användare (RLS):", logged_in_user_id)
@@ -235,20 +249,26 @@ async def chat(req: ChatRequest):
 
         llm = ChatOpenAI(model="gpt-4o-mini")
         response = llm.invoke(
-            f"""You are a professional ecommerce customer support AI.
-                Use ONLY the context below to answer.
-                If the answer is not clearly in the context, say 'I don't know'.
+        f"""
+        You are a professional ecommerce support AI.
+        Use the conversation history and context below.
 
-                Be helpful, concise and accurate.
+        If the answer is not in the context, say "I don't know".
 
-                Context:
-                {context}
+        Conversation history:
+        {history_text}
 
-                Question: {req.question}
-                
-                Answer:
-                """
-            )
+        Context:
+        {context}
+
+        Question: {req.question}
+
+        Answer:
+        """
+        )
+
+        # Vi har fått response, spara conversional memory
+        chat_memory[req.user_id].append({"q": req.question, "a": response.content})
 
         sources = [doc.page_content[:300] for doc in vector_docs]
         return {
