@@ -178,7 +178,7 @@ async def chat(req: ChatRequest):
         print("AI ROUTE:", route)                                            #type: ignore
 
         filter = None
-        filter = {"doc_type", route} if route in ["products","policy","faq"] else None
+        filter = {"doc_type": route} if route in ["products","policy","faq"] else None
       
         retriever = db.as_retriever(
             search_kwargs={
