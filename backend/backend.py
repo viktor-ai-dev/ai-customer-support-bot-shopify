@@ -93,7 +93,7 @@ async def upload(file: UploadFile = File(...),
 
         # Skapa Chroma-databas
         Chroma.from_texts(
-            texts=chunks,
+            texts=chunks,       # chunks sparas i databas
             embedding=embeddings,
             collection_name=user_id,
             persist_directory=f"./chroma_db/{user_id}",
