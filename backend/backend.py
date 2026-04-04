@@ -154,7 +154,7 @@ async def chat(req: ChatRequest):
 
         if any(Word in question for Word in ["compare","vs","difference"]):
             filter = {"doc_type":"products"}
-        elif any(Word in question for Word in ["return","refund","order","shipping"]):
+        elif any(Word in question for Word in ["return","refund","order","shipping", "delivery", "track", "where"]):
             filter = {"doc_type":"policy"}
         elif any(Word in question for Word in ["warranty","contact","support"]):
             filter = {"doc_type":"faq"}
