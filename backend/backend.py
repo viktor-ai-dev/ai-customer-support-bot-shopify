@@ -2,7 +2,6 @@ from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
-
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -203,7 +202,7 @@ async def chat(req: ChatRequest):
 
         # Top docs:
         # sorted(T@sorted, key) = sorted(list_to_sort, lambda=for each element d in unique_docs: score_doc(d,question)) 
-        # returns sorted list descending(reverse=True) limit to 5
+        # returns sorted list in descending order(reverse=True) limit to 5
         top_docs = sorted(unique_docs, key=lambda d: score_doc(d, req.question.lower()),reverse=True)[:5]
 
         # Join bygger och slår ihop ett set av strängar till en enda sträng, vilket vi bygger med listbyggaren
