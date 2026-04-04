@@ -152,7 +152,7 @@ async def chat(req: ChatRequest):
         retriever = db.as_retriever(
             search_kwargs={
                 "k": 2,
-                "filter": {"doc_type": "policy"} # Metadata filter
+                #"filter": {"doc_type": "policy"} # Metadata filter
             }
         )
 
