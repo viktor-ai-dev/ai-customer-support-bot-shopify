@@ -50,12 +50,14 @@ def get_authed_supabase() -> tuple[Client, str]:
 
     # Använder authed_response från temp_client med giltig JWT-token.
     authed_client.auth.set_session(
-        auth_response.session.access_token,
+        auth_response.session.access_token, # JWT-token, inte samma som user_id
         auth_response.session.refresh_token
     )
     user_id = str(auth_response.user.id)
-    return authed_client, user_id
 
+    # user_id unikt och sammaför varje användare som loggar in, 
+    # eftersom SupaBase kopplar ett unikt, oföränderligt UUID till varje konto.
+    return authed_client, user_id 
 # --------------------
 # Score docs
 # Check if each word in question exists in doc.
@@ -147,8 +149,35 @@ async def chat(req: ChatRequest):
         history = chat_memory[req.user_id]
 
         history_text = "\n".join([
-            f"User: {h['q']}\nAI: {h['a']}" for h in history[-3:]   # de tre senaste elementen
+            f"User: {h['q']}\nAI: {h['a']}" for h in history[-5:]   # de 5 senaste elementen
         ])
+
+        # Rewrite question (pro feature)
+        rewrite_prompt = f"""
+        You are an AI assistant.
+
+        Rewrite the user's question into a clear and complete standalone question.
+        Use conversation history if needed.
+
+        Conversation history:
+        {history_text}
+
+        User question:
+        {req.question}
+
+        Rewritten question:
+        """
+
+        rewrite_llm = ChatOpenAI(model="gpt-4o-mini")
+        rewrite_response = rewrite_llm.invoke(rewrite_prompt)
+        rewritten_question = rewrite_response.content.strip()
+
+        # skydd mot dålig rewrite
+        if len(rewritten_question) < 5:
+            rewritten_question = req.question
+
+        print("ORIGINAL:", req.question)
+        print("REWRITTEN:", rewritten_question)
 
         # Skapa lokal autentiserad klient
         authed_supabase, logged_in_user_id = get_authed_supabase()
@@ -194,7 +223,7 @@ async def chat(req: ChatRequest):
 
         ONLY return ONE word: products, policy, or faq.
 
-        Question: {req.question}
+        Question: {rewritten_question}
         """
 
         router_llm = ChatOpenAI(model="gpt-4o-mini")
@@ -204,7 +233,7 @@ async def chat(req: ChatRequest):
         if route not in ["products","policy","faq"]:
             route = None
 
-        print("QUESTION:", req.question)
+        print("QUESTION:", rewritten_question)
         print("AI ROUTE:", route)                                            #type: ignore
 
         filter = None
@@ -219,7 +248,7 @@ async def chat(req: ChatRequest):
 
         # Send question(query) and retrieve relevant chunks
         # Semantic docs = docs där de har enligt AI en relevant betydelse(semantisk)
-        vector_docs = retriever.invoke(req.question)    
+        vector_docs = retriever.invoke(rewritten_question)    
 
         # keyword docs = docs där ett/flera ord finns i question.
         # Loopa igenom chunks(docs), kolla att ett visst ord finns i question.
@@ -241,7 +270,7 @@ async def chat(req: ChatRequest):
 
         # Top docs
         # returns sorted list in descending order(reverse=True) limit to 5
-        top_docs = sorted(unique_docs, key=lambda d: score_doc(doc=d, question=req.question.lower()), reverse=True)[:5]
+        top_docs = sorted(unique_docs, key=lambda d: score_doc(doc=d, question=rewritten_question.lower()), reverse=True)[:5]
         
         # Join bygger och slår ihop ett set av strängar till en enda sträng, vilket vi bygger med listbyggaren
         # Varje element vi itererar över separeras med \n
@@ -261,14 +290,14 @@ async def chat(req: ChatRequest):
         Context:
         {context}
 
-        Question: {req.question}
+        Question: {rewritten_question}
 
         Answer:
         """
         )
 
         # Vi har fått response, spara conversional memory
-        chat_memory[req.user_id].append({"q": req.question, "a": response.content})
+        chat_memory[req.user_id].append({"q": rewritten_question, "a": response.content})
 
         sources = [doc.page_content[:300] for doc in vector_docs]
         return {
