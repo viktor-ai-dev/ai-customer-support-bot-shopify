@@ -92,7 +92,8 @@ async def upload(
         # Save mapping in Supabase
         supabase.table("users_docs").insert({
             "user_id": user_id,
-            "collection_name": user_id
+            "collection_name": user_id,
+            "doc_type": doc_type
         }).execute()
 
         return {"user_id": user_id}
@@ -158,7 +159,7 @@ async def chat(req: ChatRequest):
         if not result.data:
             return {"error": "User not found"}
 
-        collection_name = result.data[0]["collection_name"]
+        collection_name = result.data[-1]["collection_name"]
 
         # --------------------
         # Load DB
@@ -177,15 +178,20 @@ async def chat(req: ChatRequest):
         router_llm = ChatOpenAI(model="gpt-4o-mini")
 
         router_prompt = f"""
-        Classify the question into one category:
+        You are an ecommerce support classifier.
 
-        - products
-        - policy
-        - faq
+        Classify into:
+        - products → product info, specs, comparisons
+        - policy → shipping, delivery, orders, tracking, returns
+        - faq → general questions (contact, hours, warranty)
+
+        IMPORTANT:
+        - Questions about orders MUST be "policy"
+        - Questions about shipping MUST be "policy"
 
         Question: {rewritten}
 
-        Answer with ONE word.
+        Answer with ONE word only.
         """
 
         route = router_llm.invoke(router_prompt).content.strip().lower()
@@ -235,6 +241,10 @@ async def chat(req: ChatRequest):
 
         # Build context
         context = "\n".join([doc.page_content for doc in top_docs])
+
+        # Debugging
+        print("DOCS FOUND:", len(vector_docs))
+        print("CONTEXT:", context[:200])
 
         # --------------------
         # Final LLM
