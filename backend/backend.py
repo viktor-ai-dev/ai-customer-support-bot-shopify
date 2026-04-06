@@ -143,12 +143,12 @@ async def chat(req: ChatRequest, authorization: str = Header(None)):
 
         rewrite_llm = ChatOpenAI(model="gpt-4o-mini")
         rewritten = rewrite_llm.invoke(f"""
-Rewrite the user's question into a standalone question.
-Conversation history:
-{history_text}
-Question:
-{req.question}
-""").content.strip()
+        Rewrite the user's question into a standalone question.
+        Conversation history:
+        {history_text}
+        Question:
+        {req.question}
+        """).content.strip()
         if len(rewritten) < 5:
             rewritten = req.question
 
@@ -177,20 +177,20 @@ Question:
 
         llm = ChatOpenAI(model="gpt-4o-mini")
         response = llm.invoke(f"""
-You are a professional ecommerce support AI.
-Use ONLY the context below. If not found, say "I don't know".
+        You are a professional ecommerce support AI.
+        Use ONLY the context below. If not found, say "I don't know".
 
-Conversation history:
-{history_text}
+        Conversation history:
+        {history_text}
 
-Context:
-{context}
+        Context:
+        {context}
 
-Question:
-{req.question}
+        Question:
+        {req.question}
 
-Answer:
-""")
+        Answer:
+        """)
         chat_memory[user_id].append({"q": req.question, "a": response.content})
 
         sources = []
