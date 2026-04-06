@@ -3,13 +3,14 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 import re
-
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
+import stripe
+from fastapi import Header
+
 
 load_dotenv()
 
@@ -86,6 +87,68 @@ def extract_relevant_snippet(doc, question):
             return s.strip()
     
     return doc.page_content[:150]
+
+# --------------------
+# Create Checkout Session
+# --------------------
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+@app.post("/create-checkout-session")
+async def create_checkout_session(authorization: str = Header(None)):
+    try:
+        supabase, user_id = get_user_from_token(authorization)
+
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{
+                "price": os.getenv("STRIPE_PRICE_ID"),
+                "quantity": 1,
+            }],
+            success_url="https://ai-support-frontend-9qcm.onrender.com",
+            cancel_url="https://ai-support-frontend-9qcm.onrender.com",
+            metadata={
+                "user_id": user_id
+            }
+        )
+
+        return {"url": session.url}
+
+    except Exception as e:
+        return {"error": str(e)}
+    
+# --------------------
+# Webhook
+# --------------------
+@app.post("/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload,
+            sig_header,
+            os.getenv("STRIPE_WEBHOOK_SECRET")
+        )
+    except Exception as e:
+        print("Webhook error:", e)
+        return {"error": str(e)}
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+
+        user_id = session["metadata"]["user_id"]
+
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+        supabase.table("users_docs").update({
+            "is_pro": True
+        }).eq("user_id", user_id).execute()
+
+        print("🔥 USER UPGRADED:", user_id)
+
+    return {"status": "ok"}
 
 # --------------------
 # UPLOAD
