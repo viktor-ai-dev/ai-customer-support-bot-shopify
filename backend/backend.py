@@ -124,7 +124,9 @@ async def create_checkout_session(authorization: str = Header(None)):
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
-
+    print("Webhook payload:", payload.decode())
+    print("Stripe signature:", sig_header)
+    
     try:
         event = stripe.Webhook.construct_event(
             payload,
