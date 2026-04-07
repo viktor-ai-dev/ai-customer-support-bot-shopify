@@ -72,16 +72,17 @@ if st.session_state["user"]:
     file = st.file_uploader("Upload a .txt file", type=["txt"])
     if file:
         try:
-            resp = requests.post(f"{BACKEND_URL}/upload", files={"file": file}, data={"doc_type": doc_type}, headers=headers)
-            try:
-                data = resp.json()
-            except Exception:
-                st.error(f"Backend returned non-JSON:\n{resp.text}")
-                st.stop()
-            if resp.status_code != 200:
-                st.error(f"Upload failed: {data.get('error')}")
-            else:
-                st.success("File uploaded!")
+            with st.spinner(text="Processing..."):
+                resp = requests.post(f"{BACKEND_URL}/upload", files={"file": file}, data={"doc_type": doc_type}, headers=headers)
+                try:
+                    data = resp.json()
+                except Exception:
+                    st.error(f"Backend returned non-JSON:\n{resp.text}")
+                    st.stop()
+                if resp.status_code != 200:
+                    st.error(f"Upload failed: {data.get('error')}")
+                else:
+                    st.success("File uploaded!")
         except Exception as e:
             st.error(f"Upload request failed: {e}")
 
